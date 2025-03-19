@@ -1,0 +1,77 @@
+import streamlit as st
+from PyPDF2 import PdfReader
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+def extract_text_from_pdf(file):
+    """Extract text from an uploaded PDF file."""
+    pdf = PdfReader(file)
+    text = ""
+    for page in pdf.pages:
+        extracted = page.extract_text()
+        if extracted:
+            text += extracted
+    print(f"Extracted text: {text}")  # Log the extracted text
+    return text.strip() if text else None  # Return None if no text is found
+
+def compute_similarity(job_description, resumes):
+    """Compute cosine similarity between job description and resumes."""
+    print("Computing similarity...")
+    texts = [job_description] + resumes
+    vectorizer = TfidfVectorizer()
+
+    try:
+        tfidf_matrix = vectorizer.fit_transform(texts)
+        similarity_scores = cosine_similarity(tfidf_matrix[0], tfidf_matrix[1:])
+        print(f"Similarity scores: {similarity_scores}")  # Log the similarity scores
+        return similarity_scores.flatten()
+    except ValueError:  # Raised if there are empty or non-text inputs
+        print("Error in computing similarity")
+        return None
+
+def main():
+    st.title("📄 Resume Ranking System")
+    st.write("Upload resumes and enter a job description to rank them based on relevance.")
+    
+    # Job description input
+    job_desc = st.text_area("Enter Job Description", "", height=150).strip()
+    
+    # File uploader for multiple resumes
+    uploaded_files = st.file_uploader("Upload Resumes (PDF)", accept_multiple_files=True, type=["pdf"])
+
+    st.write(f"Job Description: {job_desc}")  # Add this line to check if input is being received
+    st.write(f"Uploaded Files: {len(uploaded_files)} files uploaded.")  # Check if files are being uploaded
+    
+    if st.button("Rank Resumes"):
+        if job_desc and uploaded_files:
+            # Extract text from the uploaded files
+            resumes_text = []
+            for uploaded_file in uploaded_files:
+                text = extract_text_from_pdf(uploaded_file)
+                resumes_text.append(text)
+            
+            # Filter out resumes that couldn't be processed
+            valid_resumes = [(file, text) for file, text in zip(uploaded_files, resumes_text) if text]
+            
+            if not valid_resumes:
+                st.error("None of the uploaded resumes contain extractable text. Try using OCR-based PDFs.")
+                return
+
+            files, texts = zip(*valid_resumes)  # Separate files and their texts
+            scores = compute_similarity(job_desc, list(texts))
+            
+            if scores is None:
+                st.error("Failed to compute similarity. Ensure job description and resumes contain meaningful text.")
+                return
+            
+            # Sorting resumes by similarity score
+            ranked_resumes = sorted(zip(files, scores), key=lambda x: x[1], reverse=True)
+            
+            st.subheader("Ranked Resumes")
+            for idx, (file, score) in enumerate(ranked_resumes):
+                st.write(f"{idx+1}. {file.name} - Similarity Score: {score:.2f}")
+        else:
+            st.warning("Please upload resumes and enter a job description.")
+
+if __name__ == "__main__":
+    main()
